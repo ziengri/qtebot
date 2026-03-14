@@ -1,6 +1,5 @@
 import gc
 import threading
-import traceback
 import time
 from typing import Optional, Tuple
 
@@ -46,7 +45,15 @@ class CameraManager:
         now = time.monotonic()
         self._last_frame_ts = now
         self._last_recover_ts = now
-        self.trace_dxcam_output_change = True
+        self.debug_prints = True
+        self._last_none_log_ts = 0.0
+        self._last_wait_log_ts = 0.0
+        self._last_ok_log_ts = 0.0
+        self._frame_seq = 0
+
+    def _dbg(self, message: str) -> None:
+        if self.debug_prints:
+            print(f"[CameraManager][DBG] {message}")
 
     @staticmethod
     def _to_dxcam_region(region: ScreenRegion) -> DxcamRegion:
@@ -56,53 +63,15 @@ class CameraManager:
         return (left, top, right, bottom)
 
     def _create_camera(self) -> None:
+        self._dbg("dxcam.create()")
         self.camera = dxcam.create(
             output_color=self.output_color,
             max_buffer_len=self.max_buffer_len,
         )
-        self._install_dxcam_trace_hooks()
-
-    def _install_dxcam_trace_hooks(self) -> None:
-        if not self.trace_dxcam_output_change or self.camera is None:
-            return
-
-        if getattr(self.camera, "_camera_manager_trace_hooks_installed", False):
-            return
-
-        # dxcam marks DXGI access-loss in Duplicator.update_frame() by returning False.
-        # Hook both points to print exactly where recovery starts.
-        duplicator = getattr(self.camera, "_duplicator", None)
-        if duplicator is not None and hasattr(duplicator, "update_frame"):
-            original_update_frame = duplicator.update_frame
-
-            def traced_update_frame():
-                ok = original_update_frame()
-                if ok is False:
-                    print(
-                        "[CameraManager][TRACE] "
-                        "Duplicator.update_frame -> False (DXGI access/output loss)"
-                    )
-                return ok
-
-            duplicator.update_frame = traced_update_frame
-
-        if hasattr(self.camera, "_on_output_change"):
-            original_on_output_change = self.camera._on_output_change
-
-            def traced_on_output_change():
-                print(
-                    "[CameraManager][TRACE] DXCamera._on_output_change() called "
-                    "(duplicator rebuild path)"
-                )
-                stack = "".join(traceback.format_stack(limit=8))
-                print("[CameraManager][TRACE] call stack:\n" + stack)
-                return original_on_output_change()
-
-            self.camera._on_output_change = traced_on_output_change
-
-        self.camera._camera_manager_trace_hooks_installed = True
+        self._dbg("dxcam.create() OK")
 
     def _start_camera(self, region: ScreenRegion) -> None:
+        self._dbg(f"_start_camera(region={region})")
         if self.camera is None:
             self._create_camera()
 
@@ -113,6 +82,7 @@ class CameraManager:
             target_fps=self.target_fps,
             video_mode=self.video_mode,
         )
+        self._dbg(f"camera.start(dx_region={dx_region}) OK")
 
         self._active = True
         self.current_region = region
@@ -120,12 +90,16 @@ class CameraManager:
 
     def _stop_camera_safely(self) -> None:
         if self.camera is not None:
+            self._dbg("camera.stop()")
             try:
                 self.camera.stop()
+                self._dbg("camera.stop() OK")
             except Exception:
+                self._dbg("camera.stop() EXCEPTION (ignored)")
                 pass
 
     def _rebuild_camera(self, region: ScreenRegion) -> None:
+        self._dbg(f"_rebuild_camera(region={region})")
         self._stop_camera_safely()
 
         try:
@@ -138,10 +112,15 @@ class CameraManager:
         time.sleep(self.restart_delay_sec)
 
         self._start_camera(region)
+        self._dbg("_rebuild_camera() OK")
 
     def _wait_if_restarting(self) -> None:
         with self._state_cv:
             while self._is_restarting:
+                now = time.monotonic()
+                if now - self._last_wait_log_ts > 1.0:
+                    self._dbg("waiting: another thread is restarting camera")
+                    self._last_wait_log_ts = now
                 self._state_cv.wait()
 
     def _begin_restart(self) -> bool:
@@ -166,6 +145,7 @@ class CameraManager:
 
         is_leader = self._begin_restart()
         if not is_leader:
+            self._dbg("_recover_with_retries: follower, wait for leader")
             self._wait_if_restarting()
             return self.camera is not None
 
@@ -173,16 +153,20 @@ class CameraManager:
         try:
             if reason:
                 print(f"[CameraManager] recovery started: {reason}")
+                self._dbg(f"recovery reason={reason}")
 
             for attempt in range(1, self.restart_retries + 1):
                 try:
+                    self._dbg(f"recovery attempt {attempt}/{self.restart_retries}")
                     self._rebuild_camera(region)
                     ok = True
+                    self._dbg(f"recovery attempt {attempt} OK")
                     if attempt > 1:
                         print(f"[CameraManager] recovery success on attempt {attempt}")
                     break
                 except Exception as exc:
                     print(f"[CameraManager] recovery attempt {attempt} failed: {exc}")
+                    self._dbg(f"recovery attempt {attempt} exception={exc}")
                     if attempt < self.restart_retries:
                         time.sleep(self.restart_retry_sleep_sec)
         finally:
@@ -196,6 +180,7 @@ class CameraManager:
         return ok
 
     def start(self, region: Optional[ScreenRegion] = None) -> None:
+        self._dbg("start()")
         self._wait_if_restarting()
         if region is None:
             region = self.current_region
@@ -203,12 +188,14 @@ class CameraManager:
         self._recover_with_retries(region=region, reason="start requested")
 
     def stop(self) -> None:
+        self._dbg("stop()")
         self._wait_if_restarting()
         with self._lock:
             self._active = False
             self._stop_camera_safely()
 
     def restart(self, region: Optional[ScreenRegion] = None) -> None:
+        self._dbg(f"restart(region={region})")
         if region is None:
             region = self.current_region
         self._active = True
@@ -223,6 +210,10 @@ class CameraManager:
 
     def get_frame(self):
         if not self._active:
+            now = time.monotonic()
+            if now - self._last_none_log_ts > 1.0:
+                self._dbg("get_frame -> None (inactive)")
+                self._last_none_log_ts = now
             return None
 
         now = time.monotonic()
@@ -230,6 +221,7 @@ class CameraManager:
         if self.camera is None:
             if not self._active:
                 return None
+            self._dbg("get_frame: self.camera is None")
             if now - self._last_recover_ts >= self.recover_cooldown_sec:
                 self._recover_with_retries(reason="camera was None during get_frame")
             return None
@@ -238,11 +230,15 @@ class CameraManager:
         except Exception as exc:
             if not self._active:
                 return None
+            self._dbg(f"get_latest_frame exception: {exc}")
             if now - self._last_recover_ts >= self.recover_cooldown_sec:
                 self._recover_with_retries(reason=f"get_latest_frame error: {exc}")
             return None
 
         if frame is None:
+            if now - self._last_none_log_ts > 1.0:
+                self._dbg("get_frame -> None (no frame yet)")
+                self._last_none_log_ts = now
             if now - self._last_frame_ts > self.frame_stall_timeout_sec:
                 if now - self._last_recover_ts >= self.recover_cooldown_sec:
                     self._recover_with_retries(
@@ -254,6 +250,9 @@ class CameraManager:
             return None
 
         if frame.shape != self.expected_shape:
+            self._dbg(
+                f"bad frame shape={frame.shape}, expected={self.expected_shape}"
+            )
             if now - self._last_recover_ts >= self.recover_cooldown_sec:
                 self._recover_with_retries(
                     reason=(
@@ -264,6 +263,10 @@ class CameraManager:
             return None
 
         self._last_frame_ts = now
+        self._frame_seq += 1
+        if now - self._last_ok_log_ts > 2.0:
+            self._dbg(f"get_frame OK seq={self._frame_seq} shape={frame.shape}")
+            self._last_ok_log_ts = now
         return frame
 
     def is_valid_frame_shape(self, frame) -> bool:
