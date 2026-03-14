@@ -151,13 +151,14 @@ class InputController:
         self._held_right = False
         self._backend_error_reported = False
 
-        import interception
+        import pyautogui
 
-        self._kb = interception
+        self._kb = pyautogui
 
     def _safe_key_down(self, key: str) -> None:
         try:
-            self._kb.key_down(key)
+            self._kb.keyDown(key)
+            print(f"Key down:{key}")
         except Exception as exc:
             if not self._backend_error_reported:
                 print(f"[InputController][WARN] key_down failed: {exc}")
@@ -165,7 +166,8 @@ class InputController:
 
     def _safe_key_up(self, key: str) -> None:
         try:
-            self._kb.key_up(key)
+            self._kb.keyUp(key)
+            print(f"Key up:{key}")
         except Exception as exc:
             if not self._backend_error_reported:
                 print(f"[InputController][WARN] key_up failed: {exc}")
@@ -192,6 +194,7 @@ class InputController:
             self._held_right = False
 
     def set_direction(self, direction: Direction) -> None:
+        print(f"Direction:{direction}")
         if direction == "left":
             self._hold_left()
             self._release_right()
