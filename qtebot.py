@@ -6,7 +6,8 @@ import cv2
 import numpy as np
 import interception
 
-from camera import CameraManager
+# from camera import CameraManager
+from camera_mss import CameraManager
 
 
 Rect = tuple[int, int, int, int]
@@ -66,8 +67,6 @@ class QTEBot:
         self.lead_pixels = 10
         self.last_green_mask = None
         self.last_white_mask = None
-        self._last_no_frame_log = 0.0
-        self._last_bad_shape_log = 0.0
 
     @staticmethod
     def rect_center(rect: Rect) -> tuple[int, int]:
@@ -349,21 +348,10 @@ class QTEBot:
             while True:
                 frame = self.camera_manager.get_frame()
                 if frame is None:
-                    now = time.monotonic()
-                    if now - self._last_no_frame_log > 1.0:
-                        print("[QTEBot][DBG] frame=None from camera_manager.get_frame()")
-                        self._last_no_frame_log = now
                     time.sleep(0.001)
                     continue
 
                 if not self.camera_manager.is_valid_frame_shape(frame):
-                    now = time.monotonic()
-                    if now - self._last_bad_shape_log > 1.0:
-                        print(
-                            "[QTEBot][DBG] invalid frame shape "
-                            f"{frame.shape}, expected {self.camera_manager.get_expected_shape()}"
-                        )
-                        self._last_bad_shape_log = now
                     time.sleep(0.001)
                     continue
 
