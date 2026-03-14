@@ -30,7 +30,7 @@ def main() -> None:
         loop_sleep=0.001,
         debug=True,
         log_interval=0.2,
-        neutral_requires_confirmation=True,
+        initial_direction="right",
     )
     bot.run()
 

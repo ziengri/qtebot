@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 
-Direction = Literal["left", "right", "neutral"]
+Direction = Literal["left", "right"]
 
 
 class CameraLike(Protocol):
@@ -111,18 +111,16 @@ class MotionDetector:
         return self._ncc_score(prev_strip, curr_strip)
 
     def _direction_from_shift(self, shift_x: float) -> Direction:
-        if shift_x <= -self.move_threshold:
+        if shift_x < 0:
             return "left"
-        if shift_x >= self.move_threshold:
-            return "right"
-        return "neutral"
+        return "right"
 
     def update(self, frame: np.ndarray) -> MotionResult:
         curr_gray = self._preprocess(frame)
 
         if self._prev_gray is None:
             self._prev_gray = curr_gray
-            return MotionResult(shift_x=0.0, direction="neutral", score=0.0)
+            return MotionResult(shift_x=0.0, direction="right", score=0.0)
 
         best_dx = 0
         best_score = -1.0
@@ -199,11 +197,8 @@ class InputController:
             self._hold_left()
             self._release_right()
             return
-        if direction == "right":
-            self._hold_right()
-            self._release_left()
-            return
-        self.release_all()
+        self._hold_right()
+        self._release_left()
 
     def release_all(self) -> None:
         self._release_left()
@@ -222,7 +217,7 @@ class QTEBotMotion:
         debug: bool = False,
         debug_window_name: str = "QTE Motion Debug",
         log_interval: float = 0.2,
-        neutral_requires_confirmation: bool = True,
+        initial_direction: Direction = "right",
     ) -> None:
         if consecutive_frames_required < 1:
             raise ValueError("consecutive_frames_required must be >= 1")
@@ -238,18 +233,12 @@ class QTEBotMotion:
         self.debug = debug
         self.debug_window_name = debug_window_name
         self.log_interval = log_interval
-        self.neutral_requires_confirmation = neutral_requires_confirmation
 
-        self._pending_direction: Direction = "neutral"
+        self._pending_direction: Direction = initial_direction
         self._pending_count = 0
-        self._committed_direction: Direction = "neutral"
+        self._committed_direction: Direction = initial_direction
         self._last_switch_ts = 0.0
         self._last_log_ts = 0.0
-
-    def _required_count_for(self, direction: Direction) -> int:
-        if direction == "neutral" and not self.neutral_requires_confirmation:
-            return 1
-        return self.consecutive_frames_required
 
     def _update_pending(self, direction: Direction) -> None:
         if direction == self._pending_direction:
@@ -259,8 +248,7 @@ class QTEBotMotion:
             self._pending_count = 1
 
     def _try_commit(self, now: float) -> None:
-        required = self._required_count_for(self._pending_direction)
-        if self._pending_count < required:
+        if self._pending_count < self.consecutive_frames_required:
             return
         if self._pending_direction == self._committed_direction:
             return
@@ -309,6 +297,7 @@ class QTEBotMotion:
     def run(self) -> None:
         try:
             self.camera.start()
+            self.controller.set_direction(self._committed_direction)
             print("Motion QTE bot started. Press Esc in debug window to stop.")
 
             while True:
@@ -325,7 +314,13 @@ class QTEBotMotion:
                     time.sleep(self.loop_sleep)
                     continue
 
-                self._update_pending(result.direction)
+                # If movement is too small, keep current pressed direction.
+                if abs(result.shift_x) < self.detector.move_threshold:
+                    observed_direction = self._committed_direction
+                else:
+                    observed_direction = result.direction
+
+                self._update_pending(observed_direction)
                 now = time.monotonic()
                 self._try_commit(now)
 
