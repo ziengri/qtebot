@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+import threading
 from typing import Literal, Optional, Protocol
 
 import cv2
@@ -123,16 +124,28 @@ class MotionDetector:
 
 
 class InputController:
-    def __init__(self, key_left: str = "d", key_right: str = "a") -> None:
+    def __init__(
+        self,
+        key_left: str = "d",
+        key_right: str = "a",
+        press_interval: float = 0.03,
+        tap_hold_time: float = 0.01,
+    ) -> None:
         self.key_left = key_left
         self.key_right = key_right
-        self._held_left = False
-        self._held_right = False
         self._backend_error_reported = False
+        self.press_interval = press_interval
+        self.tap_hold_time = tap_hold_time
+        self._lock = threading.RLock()
+        self._active_direction: Direction = "right"
+        self._enabled = False
+        self._stop_event = threading.Event()
 
         import interception
 
         self._kb = interception
+        self._worker = threading.Thread(target=self._press_loop, daemon=True)
+        self._worker.start()
 
     def _safe_key_down(self, key: str) -> None:
         try:
@@ -152,38 +165,40 @@ class InputController:
                 print(f"[InputController][WARN] key_up failed: {exc}")
                 self._backend_error_reported = True
 
-    def _hold_left(self) -> None:
-        if not self._held_left:
-            self._safe_key_down(self.key_left)
-            self._held_left = True
+    def _tap(self, key: str) -> None:
+        self._safe_key_down(key)
+        time.sleep(self.tap_hold_time)
+        self._safe_key_up(key)
 
-    def _release_left(self) -> None:
-        if self._held_left:
-            self._safe_key_up(self.key_left)
-            self._held_left = False
+    def _press_loop(self) -> None:
+        while not self._stop_event.is_set():
+            with self._lock:
+                if not self._enabled:
+                    time.sleep(self.press_interval)
+                    continue
+                direction = self._active_direction
 
-    def _hold_right(self) -> None:
-        if not self._held_right:
-            self._safe_key_down(self.key_right)
-            self._held_right = True
+            if direction == "left":
+                self._tap(self.key_left)
+            else:
+                self._tap(self.key_right)
 
-    def _release_right(self) -> None:
-        if self._held_right:
-            self._safe_key_up(self.key_right)
-            self._held_right = False
+            time.sleep(self.press_interval)
 
     def set_direction(self, direction: Direction) -> None:
         print(f"Direction:{direction}")
-        if direction == "left":
-            self._hold_left()
-            self._release_right()
-            return
-        self._hold_right()
-        self._release_left()
+        with self._lock:
+            self._active_direction = direction
+            self._enabled = True
 
     def release_all(self) -> None:
-        self._release_left()
-        self._release_right()
+        with self._lock:
+            self._enabled = False
+        self._stop_event.set()
+        if self._worker.is_alive():
+            self._worker.join(timeout=0.5)
+        self._safe_key_up(self.key_left)
+        self._safe_key_up(self.key_right)
 
 
 class QTEBotMotion:
