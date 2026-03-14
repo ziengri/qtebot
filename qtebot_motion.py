@@ -78,38 +78,6 @@ class MotionDetector:
 
         return gray
 
-    @staticmethod
-    def _ncc_score(a: np.ndarray, b: np.ndarray) -> float:
-        # Normalized cross-correlation for overlapping strips.
-        a32 = a.astype(np.float32, copy=False)
-        b32 = b.astype(np.float32, copy=False)
-        a_center = a32 - a32.mean()
-        b_center = b32 - b32.mean()
-        denom = float(np.linalg.norm(a_center) * np.linalg.norm(b_center))
-        if denom < 1e-8:
-            return 0.0
-        return float((a_center * b_center).sum() / denom)
-
-    def _score_for_shift(
-        self,
-        prev_gray: np.ndarray,
-        curr_gray: np.ndarray,
-        dx: int,
-    ) -> float:
-        if dx > 0:
-            prev_strip = prev_gray[:, :-dx]
-            curr_strip = curr_gray[:, dx:]
-        elif dx < 0:
-            prev_strip = prev_gray[:, -dx:]
-            curr_strip = curr_gray[:, :dx]
-        else:
-            prev_strip = prev_gray
-            curr_strip = curr_gray
-
-        if prev_strip.size == 0 or curr_strip.size == 0:
-            return -1.0
-        return self._ncc_score(prev_strip, curr_strip)
-
     def _direction_from_shift(self, shift_x: float) -> Direction:
         if shift_x < 0:
             return "left"
@@ -122,23 +90,20 @@ class MotionDetector:
             self._prev_gray = curr_gray
             return MotionResult(shift_x=0.0, direction="right", score=0.0)
 
-        best_dx = 0
-        best_score = -1.0
-        for dx in range(-self.max_shift, self.max_shift + 1):
-            score = self._score_for_shift(self._prev_gray, curr_gray, dx)
-            if score > best_score:
-                best_score = score
-                best_dx = dx
+        prev_f32 = self._prev_gray.astype(np.float32, copy=False)
+        curr_f32 = curr_gray.astype(np.float32, copy=False)
+        (raw_shift_x, _), response = cv2.phaseCorrelate(prev_f32, curr_f32)
+        clamped_shift_x = float(np.clip(raw_shift_x, -self.max_shift, self.max_shift))
 
         self._prev_gray = curr_gray
 
         if self.resize_factor is not None and self.resize_factor != 1.0:
-            shift_x = float(best_dx) / self.resize_factor
+            shift_x = clamped_shift_x / self.resize_factor
         else:
-            shift_x = float(best_dx)
+            shift_x = clamped_shift_x
 
         direction = self._direction_from_shift(shift_x)
-        return MotionResult(shift_x=shift_x, direction=direction, score=float(best_score))
+        return MotionResult(shift_x=shift_x, direction=direction, score=float(response))
 
 
 class InputController:
@@ -267,7 +232,7 @@ class QTEBotMotion:
             "[motion] "
             f"shift_x={result.shift_x:.2f} "
             f"dir={result.direction} "
-            f"score={result.score:.4f} "
+            f"score(phase_response)={result.score:.4f} "
             f"commit={self._committed_direction} "
             f"pending={self._pending_direction}:{self._pending_count}"
         )
