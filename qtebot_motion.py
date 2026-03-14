@@ -151,13 +151,13 @@ class InputController:
         self._held_right = False
         self._backend_error_reported = False
 
-        import pyautogui
+        import interception
 
-        self._kb = pyautogui
+        self._kb = interception
 
     def _safe_key_down(self, key: str) -> None:
         try:
-            self._kb.keyDown(key)
+            self._kb.key_down(key)
             print(f"Key down:{key}")
         except Exception as exc:
             if not self._backend_error_reported:
@@ -166,7 +166,7 @@ class InputController:
 
     def _safe_key_up(self, key: str) -> None:
         try:
-            self._kb.keyUp(key)
+            self._kb.key_up(key)
             print(f"Key up:{key}")
         except Exception as exc:
             if not self._backend_error_reported:

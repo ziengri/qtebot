@@ -90,7 +90,6 @@ class TemplateQTEBot:
         detector: TemplateDetector,
         threshold: float = 0.82,
         cooldown: float = 0.35,
-        delay: [float] = [0.3,0.6],
         min_confirmations: int = 2,
         roi: Optional[Rect] = None,
         key: str = "space",
@@ -123,17 +122,11 @@ class TemplateQTEBot:
         return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     def _press_space(self) -> None:
-        try:
-            import pyautogui
-            time.sleep(random.uniform(self.delay[0], self.delay[1]))
-            pyautogui.press(self.key)
-        except Exception:
-            # Fallback for setups where pyautogui is unavailable.
-            import interception
+        import interception
 
-            interception.key_down(self.key)
-            time.sleep(random.uniform(self.delay[0], self.delay[1]))
-            interception.key_up(self.key)
+        interception.key_down(self.key)
+        time.sleep(0.01)
+        interception.key_up(self.key)
 
     def _can_press(self, now: float) -> bool:
         return (now - self._last_press_ts) >= self.cooldown
