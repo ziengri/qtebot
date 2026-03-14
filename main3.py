@@ -4,7 +4,7 @@ from qtebot_motion import InputController, MotionDetector, QTEBotMotion
 
 def main() -> None:
     camera = CameraManager(
-        region= (777, 2, 416, 342),
+        region= (500, 1, 350, 150),
         target_fps=120,
         output_color="BGR",
     )
