@@ -5,12 +5,7 @@ from typing import Optional, Tuple
 import dxcam
 
 
-# ВНЕШНИЙ формат, удобный для тебя:
-# (left, top, width, height)
 ScreenRegion = Tuple[int, int, int, int]
-
-# ВНУТРЕННИЙ формат dxcam:
-# (left, top, right, bottom)
 DxcamRegion = Tuple[int, int, int, int]
 
 
@@ -22,6 +17,7 @@ class CameraManager:
         video_mode: bool = True,
         max_buffer_len: int = 64,
         output_color: str = "BGR",
+        recovery_cooldown: float = 0.5,
     ) -> None:
         self.camera = None
 
@@ -29,16 +25,17 @@ class CameraManager:
         self.video_mode = video_mode
         self.max_buffer_len = max_buffer_len
         self.output_color = output_color
+        self.recovery_cooldown = recovery_cooldown
 
         self.current_region: ScreenRegion = region
         self.expected_shape = (region[3], region[2], 3)
 
+        self.last_recovery_time = 0.0
+
     @staticmethod
     def _to_dxcam_region(region: ScreenRegion) -> DxcamRegion:
         left, top, width, height = region
-        right = left + width
-        bottom = top + height
-        return (left, top, right, bottom)
+        return (left, top, left + width, top + height)
 
     def _create_camera(self) -> None:
         self.camera = dxcam.create(
@@ -50,10 +47,8 @@ class CameraManager:
         if self.camera is None:
             self._create_camera()
 
-        dx_region = self._to_dxcam_region(region)
-
         self.camera.start(
-            region=dx_region,
+            region=self._to_dxcam_region(region),
             target_fps=self.target_fps,
             video_mode=self.video_mode,
         )
@@ -90,6 +85,43 @@ class CameraManager:
 
         self._start_camera(region)
 
+    def recover(self) -> None:
+        now = time.time()
+        if now - self.last_recovery_time < self.recovery_cooldown:
+            return
+
+        self.last_recovery_time = now
+        print("[CameraManager] Recovering dxcam after access loss/output change...")
+        self.restart()
+
+    def get_frame(self):
+        if self.camera is None:
+            return None
+
+        try:
+            frame = self.camera.get_latest_frame()
+        except Exception as exc:
+            print(f"[CameraManager] get_latest_frame failed: {exc}")
+            self.recover()
+            return None
+
+        if frame is None:
+            return None
+
+        # Иногда после system transition может прийти кадр не того размера
+        if not self.is_valid_frame_shape(frame):
+            print(
+                f"[CameraManager] Invalid frame shape: got={getattr(frame, 'shape', None)} "
+                f"expected={self.expected_shape}"
+            )
+            self.recover()
+            return None
+
+        return frame
+
+    def is_valid_frame_shape(self, frame) -> bool:
+        return frame is not None and hasattr(frame, "shape") and frame.shape == self.expected_shape
+
     def set_region(self, region: ScreenRegion, restart: bool = True) -> None:
         if restart:
             self.restart(region)
@@ -97,16 +129,5 @@ class CameraManager:
             self.current_region = region
             self.expected_shape = (region[3], region[2], 3)
 
-    def get_frame(self):
-        if self.camera is None:
-            return None
-        return self.camera.get_latest_frame()
-
-    def is_valid_frame_shape(self, frame) -> bool:
-        return frame is not None and frame.shape == self.expected_shape
-
     def get_region(self) -> ScreenRegion:
         return self.current_region
-
-    def get_expected_shape(self) -> tuple[int, int, int]:
-        return self.expected_shape
