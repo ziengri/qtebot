@@ -2,7 +2,7 @@ from camera_mss import CameraManager
 from qtebot_template import TemplateDetector, TemplateQTEBot
 
 camera = CameraManager(
-    region=(1347, 907, 179, 173),  # область захвата
+    region=(1354, 843, 160, 160),  # область захвата
     target_fps=120,
     output_color="BGR",
 )
