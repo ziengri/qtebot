@@ -51,6 +51,9 @@ class MotionDetector:
         self.blur_kernel = blur_kernel
         self.resize_factor = resize_factor
         self._prev_gray: Optional[np.ndarray] = None
+        self._flow_levels = 3
+        self._flow_winsize = 21
+        self._flow_iterations = 3
 
     def _to_gray(self, frame: np.ndarray) -> np.ndarray:
         if frame.ndim == 2:
@@ -90,9 +93,20 @@ class MotionDetector:
             self._prev_gray = curr_gray
             return MotionResult(shift_x=0.0, direction="right", score=0.0)
 
-        prev_f32 = self._prev_gray.astype(np.float32, copy=False)
-        curr_f32 = curr_gray.astype(np.float32, copy=False)
-        (raw_shift_x, _), response = cv2.phaseCorrelate(prev_f32, curr_f32)
+        flow = cv2.calcOpticalFlowFarneback(
+            self._prev_gray,
+            curr_gray,
+            None,
+            pyr_scale=0.5,
+            levels=self._flow_levels,
+            winsize=self._flow_winsize,
+            iterations=self._flow_iterations,
+            poly_n=5,
+            poly_sigma=1.2,
+            flags=0,
+        )
+        flow_x = flow[..., 0]
+        raw_shift_x = float(np.median(flow_x))
         clamped_shift_x = float(np.clip(raw_shift_x, -self.max_shift, self.max_shift))
 
         self._prev_gray = curr_gray
@@ -103,7 +117,9 @@ class MotionDetector:
             shift_x = clamped_shift_x
 
         direction = self._direction_from_shift(shift_x)
-        return MotionResult(shift_x=shift_x, direction=direction, score=float(response))
+        # confidence proxy: larger coherent horizontal flow => higher confidence
+        score = float(np.mean(np.abs(flow_x)))
+        return MotionResult(shift_x=shift_x, direction=direction, score=score)
 
 
 class InputController:
@@ -232,7 +248,7 @@ class QTEBotMotion:
             "[motion] "
             f"shift_x={result.shift_x:.2f} "
             f"dir={result.direction} "
-            f"score(phase_response)={result.score:.4f} "
+            f"score(flow_mag)={result.score:.4f} "
             f"commit={self._committed_direction} "
             f"pending={self._pending_direction}:{self._pending_count}"
         )
