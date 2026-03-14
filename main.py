@@ -3,7 +3,7 @@ from qtebot import QTEBot
 
 def main():
     bot = QTEBot(
-        region=(672, 911, 421, 63) ,
+        region=(650, 880, 600, 50) ,
         key_to_press="space",
         target_fps=120,
         video_mode=True,
