@@ -91,16 +91,16 @@ class CameraManager:
 
     def _convert_frame(self, frame_bgra: np.ndarray) -> np.ndarray:
         if self.output_color == "BGRA":
-            return frame_bgra
+            return np.ascontiguousarray(frame_bgra)
         if self.output_color == "BGR":
-            return frame_bgra[:, :, :3]
+            return np.ascontiguousarray(frame_bgra[:, :, :3])
         if self.output_color == "RGB":
-            return frame_bgra[:, :, :3][:, :, ::-1]
+            return np.ascontiguousarray(frame_bgra[:, :, :3][:, :, ::-1])
         if self.output_color == "GRAY":
             bgr = frame_bgra[:, :, :3]
             gray = np.dot(bgr[..., ::-1], [0.299, 0.587, 0.114]).astype(np.uint8)
-            return gray[:, :, None]
-        return frame_bgra[:, :, :3]
+            return np.ascontiguousarray(gray[:, :, None])
+        return np.ascontiguousarray(frame_bgra[:, :, :3])
 
     def get_frame(self):
         with self._lock:
@@ -117,7 +117,7 @@ class CameraManager:
                 self._next_frame_ts = now + (1.0 / self.target_fps)
 
             monitor = self._to_monitor(self.current_region)
-            raw = np.asarray(self.camera.grab(monitor), dtype=np.uint8)
+            raw = np.array(self.camera.grab(monitor), dtype=np.uint8, copy=True)
             return self._convert_frame(raw)
 
     def is_valid_frame_shape(self, frame) -> bool:
