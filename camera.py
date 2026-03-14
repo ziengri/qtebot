@@ -1,0 +1,112 @@
+import gc
+import time
+from typing import Optional, Tuple
+
+import dxcam
+
+
+# ВНЕШНИЙ формат, удобный для тебя:
+# (left, top, width, height)
+ScreenRegion = Tuple[int, int, int, int]
+
+# ВНУТРЕННИЙ формат dxcam:
+# (left, top, right, bottom)
+DxcamRegion = Tuple[int, int, int, int]
+
+
+class CameraManager:
+    def __init__(
+        self,
+        region: ScreenRegion,
+        target_fps: int = 60,
+        video_mode: bool = True,
+        max_buffer_len: int = 64,
+        output_color: str = "BGR",
+    ) -> None:
+        self.camera = None
+
+        self.target_fps = target_fps
+        self.video_mode = video_mode
+        self.max_buffer_len = max_buffer_len
+        self.output_color = output_color
+
+        self.current_region: ScreenRegion = region
+        self.expected_shape = (region[3], region[2], 3)
+
+    @staticmethod
+    def _to_dxcam_region(region: ScreenRegion) -> DxcamRegion:
+        left, top, width, height = region
+        right = left + width
+        bottom = top + height
+        return (left, top, right, bottom)
+
+    def _create_camera(self) -> None:
+        self.camera = dxcam.create(
+            output_color=self.output_color,
+            max_buffer_len=self.max_buffer_len,
+        )
+
+    def _start_camera(self, region: ScreenRegion) -> None:
+        if self.camera is None:
+            self._create_camera()
+
+        dx_region = self._to_dxcam_region(region)
+
+        self.camera.start(
+            region=dx_region,
+            target_fps=self.target_fps,
+            video_mode=self.video_mode,
+        )
+
+        self.current_region = region
+        self.expected_shape = (region[3], region[2], 3)
+
+    def start(self, region: Optional[ScreenRegion] = None) -> None:
+        if region is None:
+            region = self.current_region
+        self._start_camera(region)
+
+    def stop(self) -> None:
+        if self.camera is not None:
+            try:
+                self.camera.stop()
+            except Exception:
+                pass
+
+    def restart(self, region: Optional[ScreenRegion] = None) -> None:
+        if region is None:
+            region = self.current_region
+
+        self.stop()
+
+        try:
+            del self.camera
+        except Exception:
+            pass
+
+        self.camera = None
+        gc.collect()
+        time.sleep(0.2)
+
+        self._start_camera(region)
+
+    def set_region(self, region: ScreenRegion, restart: bool = True) -> None:
+        if restart:
+            self.restart(region)
+        else:
+            self.current_region = region
+            self.expected_shape = (region[3], region[2], 3)
+
+    def get_frame(self):
+        if self.camera is None:
+            return None
+        return self.camera.get_latest_frame()
+
+    def is_valid_frame_shape(self, frame) -> bool:
+        return frame is not None and frame.shape == self.expected_shape
+
+    def get_region(self) -> ScreenRegion:
+        return self.current_region
+
+    def get_expected_shape(self) -> tuple[int, int, int]:
+        return self.expected_shape
