@@ -40,6 +40,11 @@ class CameraManager:
         self.restart_delay_sec = 0.2
         self.restart_retries = 8
         self.restart_retry_sleep_sec = 0.35
+        self.frame_stall_timeout_sec = 1.0
+        self.recover_cooldown_sec = 0.5
+        now = time.monotonic()
+        self._last_frame_ts = now
+        self._last_recover_ts = now
 
     @staticmethod
     def _to_dxcam_region(region: ScreenRegion) -> DxcamRegion:
@@ -142,6 +147,9 @@ class CameraManager:
 
         if not ok:
             print("[CameraManager] recovery failed: camera unavailable")
+        else:
+            self._last_frame_ts = time.monotonic()
+            self._last_recover_ts = time.monotonic()
         return ok
 
     def start(self, region: Optional[ScreenRegion] = None) -> None:
@@ -174,19 +182,46 @@ class CameraManager:
         if not self._active:
             return None
 
+        now = time.monotonic()
         self._wait_if_restarting()
         if self.camera is None:
             if not self._active:
                 return None
-            self._recover_with_retries(reason="camera was None during get_frame")
+            if now - self._last_recover_ts >= self.recover_cooldown_sec:
+                self._recover_with_retries(reason="camera was None during get_frame")
             return None
         try:
-            return self.camera.get_latest_frame()
+            frame = self.camera.get_latest_frame()
         except Exception as exc:
             if not self._active:
                 return None
-            self._recover_with_retries(reason=f"get_latest_frame error: {exc}")
+            if now - self._last_recover_ts >= self.recover_cooldown_sec:
+                self._recover_with_retries(reason=f"get_latest_frame error: {exc}")
             return None
+
+        if frame is None:
+            if now - self._last_frame_ts > self.frame_stall_timeout_sec:
+                if now - self._last_recover_ts >= self.recover_cooldown_sec:
+                    self._recover_with_retries(
+                        reason=(
+                            f"frame stream stalled for "
+                            f"{now - self._last_frame_ts:.2f}s"
+                        )
+                    )
+            return None
+
+        if frame.shape != self.expected_shape:
+            if now - self._last_recover_ts >= self.recover_cooldown_sec:
+                self._recover_with_retries(
+                    reason=(
+                        f"unexpected frame shape {frame.shape}, "
+                        f"expected {self.expected_shape}"
+                    )
+                )
+            return None
+
+        self._last_frame_ts = now
+        return frame
 
     def is_valid_frame_shape(self, frame) -> bool:
         return frame is not None and frame.shape == self.expected_shape
