@@ -317,7 +317,7 @@ class QTEBot:
 
         if self.locked_green_rect is not None and white_rect is not None:
             hit, white_cx, zone_left, zone_right = self.should_press(white_rect)
-            print(zone_left, white_cx, zone_right, hit)
+            # print(zone_left, white_cx, zone_right, hit)
 
             if hit:
                 pressed = self.press(now)
