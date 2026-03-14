@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import ctypes
 import time
 from dataclasses import dataclass
-import threading
 from typing import Literal, Optional, Protocol
 
 import cv2
@@ -10,6 +10,86 @@ import numpy as np
 
 
 Direction = Literal["left", "right"]
+
+
+user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+INPUT_KEYBOARD = 1
+KEYEVENTF_SCANCODE = 0x0008
+KEYEVENTF_KEYUP = 0x0002
+
+SCANCODE_BY_KEY: dict[str, int] = {
+    "a": 0x1E,
+    "d": 0x20,
+}
+
+ULONG_PTR = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
+
+
+class KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", ctypes.c_ushort),
+        ("wScan", ctypes.c_ushort),
+        ("dwFlags", ctypes.c_uint),
+        ("time", ctypes.c_uint),
+        ("dwExtraInfo", ULONG_PTR),
+    ]
+
+
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", ctypes.c_long),
+        ("dy", ctypes.c_long),
+        ("mouseData", ctypes.c_uint),
+        ("dwFlags", ctypes.c_uint),
+        ("time", ctypes.c_uint),
+        ("dwExtraInfo", ULONG_PTR),
+    ]
+
+
+class HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [
+        ("uMsg", ctypes.c_uint),
+        ("wParamL", ctypes.c_ushort),
+        ("wParamH", ctypes.c_ushort),
+    ]
+
+
+class INPUT_UNION(ctypes.Union):
+    _fields_ = [
+        ("ki", KEYBDINPUT),
+        ("mi", MOUSEINPUT),
+        ("hi", HARDWAREINPUT),
+    ]
+
+
+class INPUT(ctypes.Structure):
+    _anonymous_ = ("u",)
+    _fields_ = [
+        ("type", ctypes.c_uint),
+        ("u", INPUT_UNION),
+    ]
+
+
+def send_key(scan_code: int, key_up: bool = False) -> None:
+    flags = KEYEVENTF_SCANCODE
+    if key_up:
+        flags |= KEYEVENTF_KEYUP
+
+    inp = INPUT(
+        type=INPUT_KEYBOARD,
+        ki=KEYBDINPUT(
+            wVk=0,
+            wScan=scan_code,
+            dwFlags=flags,
+            time=0,
+            dwExtraInfo=0,
+        ),
+    )
+
+    result = user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
+    if result != 1:
+        raise ctypes.WinError(ctypes.get_last_error())
 
 
 class CameraLike(Protocol):
@@ -124,32 +204,17 @@ class MotionDetector:
 
 
 class InputController:
-    def __init__(
-        self,
-        key_left: str = "d",
-        key_right: str = "a",
-        press_interval: float = 0.03,
-        tap_hold_time: float = 0.01,
-    ) -> None:
-        self.key_left = key_left
-        self.key_right = key_right
+    def __init__(self, key_left: str = "d", key_right: str = "a") -> None:
+        self.key_left = key_right
+        self.key_right = key_left
+        self._held_left = False
+        self._held_right = False
         self._backend_error_reported = False
-        self.press_interval = press_interval
-        self.tap_hold_time = tap_hold_time
-        self._lock = threading.RLock()
-        self._active_direction: Direction = "right"
-        self._enabled = False
-        self._stop_event = threading.Event()
-
-        import interception
-
-        self._kb = interception
-        self._worker = threading.Thread(target=self._press_loop, daemon=True)
-        self._worker.start()
 
     def _safe_key_down(self, key: str) -> None:
         try:
-            self._kb.key_down(key)
+            scan = SCANCODE_BY_KEY[key.lower()]
+            send_key(scan, key_up=False)
             print(f"Key down:{key}")
         except Exception as exc:
             if not self._backend_error_reported:
@@ -158,47 +223,46 @@ class InputController:
 
     def _safe_key_up(self, key: str) -> None:
         try:
-            self._kb.key_up(key)
+            scan = SCANCODE_BY_KEY[key.lower()]
+            send_key(scan, key_up=True)
             print(f"Key up:{key}")
         except Exception as exc:
             if not self._backend_error_reported:
                 print(f"[InputController][WARN] key_up failed: {exc}")
                 self._backend_error_reported = True
 
-    def _tap(self, key: str) -> None:
-        self._safe_key_down(key)
-        time.sleep(self.tap_hold_time)
-        self._safe_key_up(key)
+    def _hold_left(self) -> None:
+        if not self._held_left:
+            self._safe_key_down(self.key_left)
+            self._held_left = True
 
-    def _press_loop(self) -> None:
-        while not self._stop_event.is_set():
-            with self._lock:
-                if not self._enabled:
-                    time.sleep(self.press_interval)
-                    continue
-                direction = self._active_direction
+    def _release_left(self) -> None:
+        if self._held_left:
+            self._safe_key_up(self.key_left)
+            self._held_left = False
 
-            if direction == "left":
-                self._tap(self.key_left)
-            else:
-                self._tap(self.key_right)
+    def _hold_right(self) -> None:
+        if not self._held_right:
+            self._safe_key_down(self.key_right)
+            self._held_right = True
 
-            time.sleep(self.press_interval)
+    def _release_right(self) -> None:
+        if self._held_right:
+            self._safe_key_up(self.key_right)
+            self._held_right = False
 
     def set_direction(self, direction: Direction) -> None:
         print(f"Direction:{direction}")
-        with self._lock:
-            self._active_direction = direction
-            self._enabled = True
+        if direction == "left":
+            self._release_right()
+            self._hold_left()
+            return
+        self._release_left()
+        self._hold_right()
 
     def release_all(self) -> None:
-        with self._lock:
-            self._enabled = False
-        self._stop_event.set()
-        if self._worker.is_alive():
-            self._worker.join(timeout=0.5)
-        self._safe_key_up(self.key_left)
-        self._safe_key_up(self.key_right)
+        self._release_left()
+        self._release_right()
 
 
 class QTEBotMotion:
