@@ -1,5 +1,6 @@
 import gc
 import threading
+import traceback
 import time
 from typing import Optional, Tuple
 
@@ -45,6 +46,7 @@ class CameraManager:
         now = time.monotonic()
         self._last_frame_ts = now
         self._last_recover_ts = now
+        self.trace_dxcam_output_change = True
 
     @staticmethod
     def _to_dxcam_region(region: ScreenRegion) -> DxcamRegion:
@@ -58,6 +60,47 @@ class CameraManager:
             output_color=self.output_color,
             max_buffer_len=self.max_buffer_len,
         )
+        self._install_dxcam_trace_hooks()
+
+    def _install_dxcam_trace_hooks(self) -> None:
+        if not self.trace_dxcam_output_change or self.camera is None:
+            return
+
+        if getattr(self.camera, "_camera_manager_trace_hooks_installed", False):
+            return
+
+        # dxcam marks DXGI access-loss in Duplicator.update_frame() by returning False.
+        # Hook both points to print exactly where recovery starts.
+        duplicator = getattr(self.camera, "_duplicator", None)
+        if duplicator is not None and hasattr(duplicator, "update_frame"):
+            original_update_frame = duplicator.update_frame
+
+            def traced_update_frame():
+                ok = original_update_frame()
+                if ok is False:
+                    print(
+                        "[CameraManager][TRACE] "
+                        "Duplicator.update_frame -> False (DXGI access/output loss)"
+                    )
+                return ok
+
+            duplicator.update_frame = traced_update_frame
+
+        if hasattr(self.camera, "_on_output_change"):
+            original_on_output_change = self.camera._on_output_change
+
+            def traced_on_output_change():
+                print(
+                    "[CameraManager][TRACE] DXCamera._on_output_change() called "
+                    "(duplicator rebuild path)"
+                )
+                stack = "".join(traceback.format_stack(limit=8))
+                print("[CameraManager][TRACE] call stack:\n" + stack)
+                return original_on_output_change()
+
+            self.camera._on_output_change = traced_on_output_change
+
+        self.camera._camera_manager_trace_hooks_installed = True
 
     def _start_camera(self, region: ScreenRegion) -> None:
         if self.camera is None:
