@@ -1,5 +1,6 @@
 import time
 import random
+import threading
 from typing import Optional
 
 import cv2
@@ -338,7 +339,7 @@ class QTEBot:
 
         return frame, pressed
 
-    def run(self) -> bool:
+    def run(self, stop_event: Optional[threading.Event] = None) -> bool:
         try:
             print(f"Бот запущен. Клавиша: {self.key_to_press}")
             print("Нажми Q в окне отладки для выхода.")
@@ -346,6 +347,9 @@ class QTEBot:
             self.camera_manager.start()
 
             while True:
+                if stop_event is not None and stop_event.is_set():
+                    return False
+
                 frame = self.camera_manager.get_frame()
                 if frame is None:
                     time.sleep(0.001)

@@ -1,95 +1,16 @@
 from __future__ import annotations
 
-import ctypes
+import threading
 import time
 from dataclasses import dataclass
 from typing import Literal, Optional, Protocol
 
 import cv2
 import numpy as np
+import interception
 
 
 Direction = Literal["left", "right"]
-
-
-user32 = ctypes.WinDLL("user32", use_last_error=True)
-
-INPUT_KEYBOARD = 1
-KEYEVENTF_SCANCODE = 0x0008
-KEYEVENTF_KEYUP = 0x0002
-
-SCANCODE_BY_KEY: dict[str, int] = {
-    "a": 0x1E,
-    "d": 0x20,
-}
-
-ULONG_PTR = ctypes.c_ulonglong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_ulong
-
-
-class KEYBDINPUT(ctypes.Structure):
-    _fields_ = [
-        ("wVk", ctypes.c_ushort),
-        ("wScan", ctypes.c_ushort),
-        ("dwFlags", ctypes.c_uint),
-        ("time", ctypes.c_uint),
-        ("dwExtraInfo", ULONG_PTR),
-    ]
-
-
-class MOUSEINPUT(ctypes.Structure):
-    _fields_ = [
-        ("dx", ctypes.c_long),
-        ("dy", ctypes.c_long),
-        ("mouseData", ctypes.c_uint),
-        ("dwFlags", ctypes.c_uint),
-        ("time", ctypes.c_uint),
-        ("dwExtraInfo", ULONG_PTR),
-    ]
-
-
-class HARDWAREINPUT(ctypes.Structure):
-    _fields_ = [
-        ("uMsg", ctypes.c_uint),
-        ("wParamL", ctypes.c_ushort),
-        ("wParamH", ctypes.c_ushort),
-    ]
-
-
-class INPUT_UNION(ctypes.Union):
-    _fields_ = [
-        ("ki", KEYBDINPUT),
-        ("mi", MOUSEINPUT),
-        ("hi", HARDWAREINPUT),
-    ]
-
-
-class INPUT(ctypes.Structure):
-    _anonymous_ = ("u",)
-    _fields_ = [
-        ("type", ctypes.c_uint),
-        ("u", INPUT_UNION),
-    ]
-
-
-def send_key(scan_code: int, key_up: bool = False) -> None:
-    flags = KEYEVENTF_SCANCODE
-    if key_up:
-        flags |= KEYEVENTF_KEYUP
-
-    inp = INPUT(
-        type=INPUT_KEYBOARD,
-        ki=KEYBDINPUT(
-            wVk=0,
-            wScan=scan_code,
-            dwFlags=flags,
-            time=0,
-            dwExtraInfo=0,
-        ),
-    )
-
-    result = user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(INPUT))
-    if result != 1:
-        raise ctypes.WinError(ctypes.get_last_error())
 
 
 class CameraLike(Protocol):
@@ -198,7 +119,6 @@ class MotionDetector:
             shift_x = clamped_shift_x
 
         direction = self._direction_from_shift(shift_x)
-        # confidence proxy: larger coherent horizontal flow => higher confidence
         score = float(np.mean(np.abs(flow_x)))
         return MotionResult(shift_x=shift_x, direction=direction, score=score)
 
@@ -213,8 +133,7 @@ class InputController:
 
     def _safe_key_down(self, key: str) -> None:
         try:
-            scan = SCANCODE_BY_KEY[key.lower()]
-            send_key(scan, key_up=False)
+            interception.key_down(key.lower())
             print(f"Key down:{key}")
         except Exception as exc:
             if not self._backend_error_reported:
@@ -223,8 +142,7 @@ class InputController:
 
     def _safe_key_up(self, key: str) -> None:
         try:
-            scan = SCANCODE_BY_KEY[key.lower()]
-            send_key(scan, key_up=True)
+            interception.key_up(key.lower())
             print(f"Key up:{key}")
         except Exception as exc:
             if not self._backend_error_reported:
@@ -354,13 +272,16 @@ class QTEBotMotion:
         )
         return view
 
-    def run(self) -> None:
+    def run(self, stop_event: Optional[threading.Event] = None) -> bool:
         try:
             self.camera.start()
             self.controller.set_direction(self._committed_direction)
             print("Motion QTE bot started. Press Esc in debug window to stop.")
 
             while True:
+                if stop_event is not None and stop_event.is_set():
+                    return False
+
                 frame = self.camera.get_frame()
                 if frame is None:
                     time.sleep(self.loop_sleep)
@@ -374,7 +295,6 @@ class QTEBotMotion:
                     time.sleep(self.loop_sleep)
                     continue
 
-                # If movement is too small, keep current pressed direction.
                 if abs(result.shift_x) < self.detector.move_threshold:
                     observed_direction = self._committed_direction
                 else:
@@ -389,13 +309,15 @@ class QTEBotMotion:
                     debug_frame = self._draw_debug(frame, result)
                     cv2.imshow(self.debug_window_name, debug_frame)
                     if cv2.waitKey(1) & 0xFF == 27:
-                        break
+                        return False
 
                 time.sleep(self.loop_sleep)
         except KeyboardInterrupt:
-            pass
+            return False
         finally:
             self.controller.release_all()
             self.camera.stop()
             if self.debug:
                 cv2.destroyAllWindows()
+
+        return False

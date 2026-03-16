@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Protocol, Sequence
@@ -161,12 +162,15 @@ class TemplateQTEBot:
         cv2.putText(view, text, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
         return view
 
-    def run(self) -> bool:
+    def run(self, stop_event: Optional[threading.Event] = None) -> bool:
         try:
             self.camera.start()
             print("Template QTE bot started. Press Q in debug window to stop.")
 
             while True:
+                if stop_event is not None and stop_event.is_set():
+                    return False
+
                 try:
                     frame = self.camera.get_frame()
                 except Exception as exc:
