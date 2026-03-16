@@ -241,14 +241,14 @@ class QTEBotMotion:
         now = time.monotonic()
         if now - self._last_log_ts < self.log_interval:
             return
-        print(
-            "[motion] "
-            f"shift_x={result.shift_x:.2f} "
-            f"dir={result.direction} "
-            f"score(flow_mag)={result.score:.4f} "
-            f"commit={self._committed_direction} "
-            f"pending={self._pending_direction}:{self._pending_count}"
-        )
+        # print(
+        #     "[motion] "
+        #     f"shift_x={result.shift_x:.2f} "
+        #     f"dir={result.direction} "
+        #     f"score(flow_mag)={result.score:.4f} "
+        #     f"commit={self._committed_direction} "
+        #     f"pending={self._pending_direction}:{self._pending_count}"
+        # )
         self._last_log_ts = now
 
     def _draw_debug(self, frame: np.ndarray, result: MotionResult) -> np.ndarray:

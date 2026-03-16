@@ -94,7 +94,7 @@ class QTESequenceRunner:
             consecutive_frames_required=2,
             switch_cooldown=0.05,
             loop_sleep=0.001,
-            debug=True,
+            debug=False,
             log_interval=0.2,
             initial_direction="right",
         )
