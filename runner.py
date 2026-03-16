@@ -16,6 +16,12 @@ class QTESequenceRunner:
         self.enabled_event = threading.Event()
         self.cancel_event = threading.Event()
         self.restart_event = threading.Event()
+        self._cycle_idx = 0
+
+    def _log(self, message: str) -> None:
+        ts = time.strftime("%H:%M:%S")
+        thread_name = threading.current_thread().name
+        print(f"[{ts}][{thread_name}] {message}")
 
     def _build_stage1_bot(self) -> QTEBot:
         return QTEBot(
@@ -119,61 +125,88 @@ class QTESequenceRunner:
         )
 
     def _sleep_interruptible(self, duration: float) -> bool:
+        self._log(f"[sleep] start duration={duration:.2f}s")
         end_ts = time.monotonic() + duration
         while time.monotonic() < end_ts:
             if not self.enabled_event.is_set():
+                self._log("[sleep] interrupted: enabled_event=False")
                 return False
             if self.restart_event.is_set():
+                self._log("[sleep] interrupted: restart_event=True")
                 return False
             if self.cancel_event.is_set():
+                self._log("[sleep] interrupted: cancel_event=True")
                 return False
             time.sleep(0.05)
+        self._log("[sleep] finished")
         return True
 
     def _handle_stage_false(self, stage_name: str) -> None:
+        self._log(
+            f"[{stage_name}] returned False "
+            f"(enabled={self.enabled_event.is_set()} "
+            f"restart={self.restart_event.is_set()} "
+            f"cancel={self.cancel_event.is_set()})"
+        )
         if not self.enabled_event.is_set():
-            print(f"[{stage_name}] stopped by F9")
+            self._log(f"[{stage_name}] stopped by stop hotkey")
             return
         if self.restart_event.is_set():
-            print(f"[{stage_name}] restart requested by F8")
+            self._log(f"[{stage_name}] restart requested by start hotkey")
             return
-        print(f"[{stage_name}] finished without success, restarting cycle from stage 1")
+        self._log(f"[{stage_name}] finished without success, restarting cycle from stage 1")
 
     def _run_stage4(self) -> bool:
+        self._log("[stage4] start template detector")
         template_bot = self._build_stage4_template_bot()
-        if not template_bot.run(stop_event=self.cancel_event):
+        template_ok = template_bot.run(stop_event=self.cancel_event)
+        self._log(f"[stage4] template result={template_ok}")
+        if not template_ok:
             return False
 
         if self.cancel_event.is_set():
+            self._log("[stage4] cancelled after template success")
             return False
 
         if not self._sleep_interruptible(1.0):
+            self._log("[stage4] aborted during pre-click sleep")
             return False
 
+        self._log("[stage4] start click bot")
         click_bot = self._build_stage4_click_bot()
-        return click_bot.run(stop_event=self.cancel_event)
+        click_ok = click_bot.run(stop_event=self.cancel_event)
+        self._log(f"[stage4] click result={click_ok}")
+        return click_ok
 
     def _on_hotkey_start(self) -> None:
-        print("[HOTKEY] F8 -> start/restart from stage 1")
+        self._log("[HOTKEY] START -> start/restart from stage 1")
         self.enabled_event.set()
         self.restart_event.set()
         self.cancel_event.set()
+        self._log(
+            f"[HOTKEY] state: enabled={self.enabled_event.is_set()} "
+            f"restart={self.restart_event.is_set()} cancel={self.cancel_event.is_set()}"
+        )
 
     def _on_hotkey_stop(self) -> None:
-        print("[HOTKEY] F9 -> stop all and go idle")
+        self._log("[HOTKEY] STOP -> stop all and go idle")
         self.enabled_event.clear()
         self.cancel_event.set()
+        self._log(
+            f"[HOTKEY] state: enabled={self.enabled_event.is_set()} "
+            f"restart={self.restart_event.is_set()} cancel={self.cancel_event.is_set()}"
+        )
 
     def run_forever(self) -> None:
         try:
             import keyboard
         except Exception as exc:
-            print(f"[FATAL] keyboard module is required for hotkeys: {exc}")
+            self._log(f"[FATAL] keyboard module is required for hotkeys: {exc}")
             return
 
         keyboard.add_hotkey("f9", self._on_hotkey_start, suppress=False)
         keyboard.add_hotkey("f10", self._on_hotkey_stop, suppress=False)
-        print("Runner started. F9=start/restart, F10=stop.")
+        self._log("Runner started. F9=start/restart, F10=stop.")
 
         motion_thread: Optional[threading.Thread] = None
 
@@ -182,55 +215,89 @@ class QTESequenceRunner:
                 while not self.enabled_event.is_set():
                     time.sleep(0.1)
 
+                self._cycle_idx += 1
+                self._log(
+                    f"[CYCLE {self._cycle_idx}] arm cycle "
+                    f"(enabled={self.enabled_event.is_set()} "
+                    f"restart={self.restart_event.is_set()} cancel={self.cancel_event.is_set()})"
+                )
                 self.cancel_event.clear()
                 self.restart_event.clear()
-                print("[CYCLE] start from stage 1")
+                self._log(f"[CYCLE {self._cycle_idx}] start from stage 1")
 
+                self._log(f"[CYCLE {self._cycle_idx}] stage1 running")
                 stage1_ok = self._build_stage1_bot().run(stop_event=self.cancel_event)
+                self._log(f"[CYCLE {self._cycle_idx}] stage1 result={stage1_ok}")
                 if not stage1_ok:
                     self._handle_stage_false("stage1")
                     continue
 
                 if self.restart_event.is_set() or not self.enabled_event.is_set():
+                    self._log(
+                        f"[CYCLE {self._cycle_idx}] break after stage1 due to control flags "
+                        f"(enabled={self.enabled_event.is_set()} restart={self.restart_event.is_set()})"
+                    )
                     continue
 
+                self._log(f"[CYCLE {self._cycle_idx}] stage2 running")
                 stage2_ok = self._build_stage2_bot().run(stop_event=self.cancel_event)
+                self._log(f"[CYCLE {self._cycle_idx}] stage2 result={stage2_ok}")
                 if not stage2_ok:
                     self._handle_stage_false("stage2")
                     continue
 
                 if self.restart_event.is_set() or not self.enabled_event.is_set():
+                    self._log(
+                        f"[CYCLE {self._cycle_idx}] break after stage2 due to control flags "
+                        f"(enabled={self.enabled_event.is_set()} restart={self.restart_event.is_set()})"
+                    )
                     continue
 
                 motion_result = {"value": False}
 
                 def motion_worker() -> None:
+                    self._log(f"[CYCLE {self._cycle_idx}] stage3 thread start")
                     bot = self._build_stage3_bot()
                     motion_result["value"] = bot.run(stop_event=self.cancel_event)
+                    self._log(
+                        f"[CYCLE {self._cycle_idx}] stage3 thread end "
+                        f"result={motion_result['value']}"
+                    )
 
                 motion_thread = threading.Thread(target=motion_worker, name="stage3-motion", daemon=True)
                 motion_thread.start()
+                self._log(f"[CYCLE {self._cycle_idx}] stage3 thread launched")
 
+                self._log(f"[CYCLE {self._cycle_idx}] stage4 running")
                 stage4_ok = self._run_stage4()
+                self._log(f"[CYCLE {self._cycle_idx}] stage4 result={stage4_ok}")
 
                 self.cancel_event.set()
+                self._log(f"[CYCLE {self._cycle_idx}] cancel_event set, joining stage3")
                 motion_thread.join(timeout=10.0)
+                self._log(
+                    f"[CYCLE {self._cycle_idx}] stage3 join complete "
+                    f"(alive={motion_thread.is_alive()} result={motion_result['value']})"
+                )
                 motion_thread = None
 
                 if not stage4_ok:
                     self._handle_stage_false("stage4")
                     continue
 
-                print("[CYCLE] stage4=True, stopping all stages and sleeping 5 seconds")
+                self._log(f"[CYCLE {self._cycle_idx}] stage4=True, sleeping 5 seconds before restart")
                 self.cancel_event.clear()
                 if not self._sleep_interruptible(5.0):
+                    self._log(f"[CYCLE {self._cycle_idx}] post-success sleep interrupted")
                     continue
 
-                print("[CYCLE] restart after sleep")
+                self._log(f"[CYCLE {self._cycle_idx}] restart after sleep")
         finally:
+            self._log("[runner] shutdown: set cancel_event and unhook hotkeys")
             self.cancel_event.set()
             if motion_thread is not None and motion_thread.is_alive():
                 motion_thread.join(timeout=2.0)
+                self._log(f"[runner] stage3 join during shutdown (alive={motion_thread.is_alive()})")
             keyboard.unhook_all_hotkeys()
 
 

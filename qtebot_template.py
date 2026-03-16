@@ -189,7 +189,7 @@ class TemplateQTEBot:
                 now = time.monotonic()
                 if now - self._last_log_ts >= self.log_interval:
                     name = "-" if match is None else match.template_name
-                    print(f"[match] best={score:.4f} template={name}")
+                    # print(f"[match] best={score:.4f} template={name}")
                     self._last_log_ts = now
 
                 if match is not None and score >= self.threshold:
