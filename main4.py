@@ -1,17 +1,13 @@
 from camera_mss import CameraManager
 from qtebot_template import TemplateDetector, TemplateQTEBot
-
+from qte_click_bot import QTEClickBot, Point
 camera = CameraManager(
-    region=(1354, 843, 160, 160),  # область захвата
+    region=(744, 678, 430, 100),  # область захвата
     target_fps=120,
     output_color="BGR",
 )
 detector = TemplateDetector([
-    "templates/templateP1.png",
-    "templates/templateP2.png",
-    "templates/templateS1.png",
-    "templates/templateS2.png",
-    "templates/templateS3.png",
+    "templates/finish_template.png",
 ])
 
 bot = TemplateQTEBot(
@@ -21,7 +17,7 @@ bot = TemplateQTEBot(
     threshold=0.98,
     cooldown=0.35,
     min_confirmations=2,
-    key="space",
+    key=None,
     show_debug=True,
 )
 result = bot.run()
@@ -29,3 +25,10 @@ if result:
     print("Задача выполнена.")
 else:
     print("Остановлено без выполнения.")
+
+bot = QTEClickBot(
+    pick=Point(),
+    drop=Point(),
+    type="drop"
+)
+result = bot.run()

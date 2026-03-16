@@ -92,7 +92,7 @@ class TemplateQTEBot:
         cooldown: float = 0.35,
         min_confirmations: int = 2,
         roi: Optional[Rect] = None,
-        key: str = "space",
+        key: Optional[str] = "space",
         show_debug: bool = False,
         debug_window_name: str = "QTE Template Debug",
         log_interval: float = 0.2,
@@ -104,7 +104,7 @@ class TemplateQTEBot:
         self.cooldown = float(cooldown)
         self.min_confirmations = int(min_confirmations)
         self.roi = roi
-        self.key = key
+        self.key = None if key is None else str(key)
         self.show_debug = show_debug
         self.debug_window_name = debug_window_name
         self.log_interval = log_interval
@@ -123,6 +123,8 @@ class TemplateQTEBot:
 
     def _press_space(self) -> None:
         import interception
+        if self.key is None:
+            return
 
         interception.key_down(self.key)
         time.sleep(0.01)
@@ -159,7 +161,7 @@ class TemplateQTEBot:
         cv2.putText(view, text, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
         return view
 
-    def run(self) -> None:
+    def run(self) -> bool:
         try:
             self.camera.start()
             print("Template QTE bot started. Press Q in debug window to stop.")
@@ -194,10 +196,15 @@ class TemplateQTEBot:
                 fired = False
                 if self._confirmations >= self.min_confirmations and self._can_press(now):
                     try:
-                        self._press_space()
-                        self._last_press_ts = now
-                        fired = True
-                        print("[ACTION] SPACE")
+                        if self.key is None:
+                            fired = True
+                            print("[ACTION] MATCH (key=None, no key press)")
+                        else:
+                            self._press_space()
+                            self._last_press_ts = now
+                            fired = True
+                            print(f"[ACTION] {self.key.upper()}")
+                        return True
                     except Exception as exc:
                         print(f"[WARN] key press failed: {exc}")
                     finally:
@@ -207,10 +214,14 @@ class TemplateQTEBot:
                     debug_frame = self._draw_debug(frame, match, score, fired)
                     cv2.imshow(self.debug_window_name, debug_frame)
                     if cv2.waitKey(1) & 0xFF == ord("q"):
-                        break
+                        return False
 
                 time.sleep(self.idle_sleep)
+        except KeyboardInterrupt:
+            return False
         finally:
             self.camera.stop()
             if self.show_debug:
                 cv2.destroyAllWindows()
+
+        return False

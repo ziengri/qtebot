@@ -22,7 +22,11 @@ def main():
         use_center_band_filter=True,
         center_band_half_height=25,
     )
-    bot.run()
+    result = bot.run()
+    if result:
+        print("Задача выполнена.")
+    else:
+        print("Остановлено без выполнения.")
 
 
 if __name__ == "__main__":

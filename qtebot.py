@@ -298,7 +298,7 @@ class QTEBot:
             2,
         )
 
-    def process_frame(self, frame):
+    def process_frame(self, frame) -> tuple[np.ndarray, bool]:
         green_rect, green_mask = self.find_green_zone(frame)
         white_rect, white_mask = self.find_white_bar(frame)
 
@@ -336,9 +336,9 @@ class QTEBot:
                 pressed=pressed,
             )
 
-        return frame
+        return frame, pressed
 
-    def run(self) -> None:
+    def run(self) -> bool:
         try:
             print(f"Бот запущен. Клавиша: {self.key_to_press}")
             print("Нажми Q в окне отладки для выхода.")
@@ -355,7 +355,9 @@ class QTEBot:
                     time.sleep(0.001)
                     continue
 
-                debug_frame = self.process_frame(frame)
+                debug_frame, pressed = self.process_frame(frame)
+                if pressed:
+                    return True
 
                 if self.show_debug:
                     cv2.imshow("QTE Debug", debug_frame)
@@ -367,10 +369,14 @@ class QTEBot:
                             cv2.imshow("Green Mask", self.last_green_mask)
 
                     if cv2.waitKey(1) & 0xFF == ord("q"):
-                        break
+                        return False
 
                 time.sleep(0.001)
+        except KeyboardInterrupt:
+            return False
 
         finally:
             self.camera_manager.stop()
             cv2.destroyAllWindows()
+
+        return False
