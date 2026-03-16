@@ -34,8 +34,8 @@ class QTESequenceRunner:
             press_cooldown=0.50,
             green_lost_timeout=0.40,
             reset_lock_after_press=True,
-            show_debug=True,
-            show_masks=True,
+            show_debug=False,
+            show_masks=False,
             min_green_area=30,
             min_white_area=10,
             max_white_width=25,
@@ -68,7 +68,7 @@ class QTESequenceRunner:
             cooldown=0.35,
             min_confirmations=2,
             key="space",
-            show_debug=True,
+            show_debug=False,
         )
 
     def _build_stage3_bot(self) -> QTEBotMotion:
@@ -114,7 +114,7 @@ class QTESequenceRunner:
             cooldown=0.35,
             min_confirmations=2,
             key=None,
-            show_debug=True,
+            show_debug=False,
         )
 
     def _build_stage4_click_bot(self) -> QTEClickBot:
