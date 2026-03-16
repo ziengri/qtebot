@@ -171,9 +171,9 @@ class QTESequenceRunner:
             print(f"[FATAL] keyboard module is required for hotkeys: {exc}")
             return
 
-        keyboard.add_hotkey("f8", self._on_hotkey_start, suppress=False)
-        keyboard.add_hotkey("f9", self._on_hotkey_stop, suppress=False)
-        print("Runner started. F8=start/restart, F9=stop.")
+        keyboard.add_hotkey("f9", self._on_hotkey_start, suppress=False)
+        keyboard.add_hotkey("f10", self._on_hotkey_stop, suppress=False)
+        print("Runner started. F9=start/restart, F10=stop.")
 
         motion_thread: Optional[threading.Thread] = None
 
