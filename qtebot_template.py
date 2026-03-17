@@ -216,8 +216,7 @@ class TemplateQTEBot:
                             self._last_press_ts = now
                             fired = True
                             print(
-                                f"[ACTION] {self.key.upper()} "
-                                f"score={score:.4f} elapsed={now - started_ts:.2f}s"
+                                f"[ACTION] {self.key.upper()} score={score:.4f} elapsed={now - started_ts:.2f}s"
                             )
                         return True
                     except Exception as exc:
