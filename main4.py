@@ -9,7 +9,9 @@ camera = CameraManager(
     output_color="BGR",
 )
 detector = TemplateDetector([
-    "templates/finish_template.png"])
+    "templates/finish_template.png",
+    "templates/finish_template2.png",
+    "templates/finish_template3.png"])
 
 bot = TemplateQTEBot(
     camera=camera,
