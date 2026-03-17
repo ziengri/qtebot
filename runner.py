@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import threading
 import time
 from typing import Optional
@@ -151,17 +152,18 @@ class QTESequenceRunner:
         while not self.enabled_event.is_set():
             time.sleep(0.1)
 
-    def _hotkey_watch_loop(self, keyboard_module, stop_event: threading.Event) -> None:
+    @staticmethod
+    def _is_vk_pressed(vk_code: int) -> bool:
+        return bool(ctypes.windll.user32.GetAsyncKeyState(vk_code) & 0x8000)
+
+    def _hotkey_watch_loop(self, stop_event: threading.Event) -> None:
+        vk_f9 = 0x78
+        vk_f10 = 0x79
         prev_start = False
         prev_stop = False
         while not stop_event.is_set():
-            try:
-                start_pressed = keyboard_module.is_pressed("f9")
-                stop_pressed = keyboard_module.is_pressed("f10")
-            except Exception as exc:
-                self._log(f"[HOTKEY] watcher error: {exc}")
-                time.sleep(0.2)
-                continue
+            start_pressed = self._is_vk_pressed(vk_f9)
+            stop_pressed = self._is_vk_pressed(vk_f10)
 
             if start_pressed and not prev_start:
                 self._on_hotkey_start()
@@ -170,7 +172,7 @@ class QTESequenceRunner:
 
             prev_start = start_pressed
             prev_stop = stop_pressed
-            time.sleep(0.05)
+            time.sleep(0.03)
 
     def _handle_stage_false(self, stage_name: str) -> None:
         if not self.enabled_event.is_set():
@@ -226,16 +228,10 @@ class QTESequenceRunner:
         return result_holder["ok"]
 
     def run_forever(self) -> None:
-        try:
-            import keyboard
-        except Exception as exc:
-            self._log(f"[FATAL] keyboard module is required: {exc}")
-            return
-
         hotkey_stop_event = threading.Event()
         hotkey_thread = threading.Thread(
             target=self._hotkey_watch_loop,
-            args=(keyboard, hotkey_stop_event),
+            args=(hotkey_stop_event,),
             name="hotkey-watch",
             daemon=True,
         )
