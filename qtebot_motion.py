@@ -276,7 +276,7 @@ class QTEBotMotion:
         try:
             self.camera.start()
             self.controller.set_direction(self._committed_direction)
-            print("Motion QTE bot started. Press Esc in debug window to stop.")
+            print("Motion QTE bot started.")
 
             while True:
                 if stop_event is not None and stop_event.is_set():
@@ -308,8 +308,7 @@ class QTEBotMotion:
                     self._debug_log(result)
                     debug_frame = self._draw_debug(frame, result)
                     cv2.imshow(self.debug_window_name, debug_frame)
-                    if cv2.waitKey(1) & 0xFF == 27:
-                        return False
+                    cv2.waitKey(1)
 
                 time.sleep(self.loop_sleep)
         except KeyboardInterrupt:

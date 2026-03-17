@@ -342,7 +342,7 @@ class QTEBot:
     def run(self, stop_event: Optional[threading.Event] = None) -> bool:
         try:
             print(f"Р‘РѕС‚ Р·Р°РїСѓС‰РµРЅ. РљР»Р°РІРёС€Р°: {self.key_to_press}")
-            print("РќР°Р¶РјРё Q РІ РѕРєРЅРµ РѕС‚Р»Р°РґРєРё РґР»СЏ РІС‹С…РѕРґР°.")
+            print("Ожидание события в стадии.")
 
             self.camera_manager.start()
 
@@ -372,8 +372,7 @@ class QTEBot:
                         if self.last_green_mask is not None:
                             cv2.imshow("Green Mask", self.last_green_mask)
 
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        return False
+                    cv2.waitKey(1)
 
                 time.sleep(0.001)
         except KeyboardInterrupt:

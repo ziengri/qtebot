@@ -165,7 +165,7 @@ class TemplateQTEBot:
     def run(self, stop_event: Optional[threading.Event] = None) -> bool:
         try:
             self.camera.start()
-            print("Template QTE bot started. Press Q in debug window to stop.")
+            print("Template QTE bot started.")
 
             while True:
                 if stop_event is not None and stop_event.is_set():
@@ -217,8 +217,7 @@ class TemplateQTEBot:
                 if self.show_debug:
                     debug_frame = self._draw_debug(frame, match, score, fired)
                     cv2.imshow(self.debug_window_name, debug_frame)
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        return False
+                    cv2.waitKey(1)
 
                 time.sleep(self.idle_sleep)
         except KeyboardInterrupt:
