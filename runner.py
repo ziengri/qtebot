@@ -12,10 +12,11 @@ from qtebot_template import TemplateDetector, TemplateQTEBot
 
 
 class QTESequenceRunner:
-    def __init__(self) -> None:
+    def __init__(self, stage3_timeout_seconds: float = 60.0) -> None:
         self.enabled_event = threading.Event()
         self.cancel_event = threading.Event()
         self._cycle_idx = 0
+        self.stage3_timeout_seconds = max(1.0, float(stage3_timeout_seconds))
 
     def _log(self, message: str) -> None:
         ts = time.strftime("%H:%M:%S")
@@ -174,6 +175,35 @@ class QTESequenceRunner:
         self._log(f"[stage4] click result={click_ok}")
         return click_ok
 
+    def _run_stage4_with_stage3_timeout(self, cycle_id: int) -> bool:
+        result_holder = {"ok": False}
+
+        def stage4_worker() -> None:
+            result_holder["ok"] = self._run_stage4()
+
+        stage4_thread = threading.Thread(target=stage4_worker, name="stage4-worker", daemon=True)
+        stage4_thread.start()
+
+        deadline = time.monotonic() + self.stage3_timeout_seconds
+        while stage4_thread.is_alive():
+            if not self.enabled_event.is_set():
+                self._log(f"[CYCLE {cycle_id}] stage4 interrupted: runner disabled")
+                self.cancel_event.set()
+                break
+            if self.cancel_event.is_set():
+                break
+            if time.monotonic() >= deadline:
+                self._log(
+                    f"[CYCLE {cycle_id}] stage3 timeout reached "
+                    f"({self.stage3_timeout_seconds:.1f}s) -> force restart cycle"
+                )
+                self.cancel_event.set()
+                break
+            stage4_thread.join(timeout=0.1)
+
+        stage4_thread.join(timeout=2.0)
+        return result_holder["ok"]
+
     def run_forever(self) -> None:
         try:
             import keyboard
@@ -228,7 +258,7 @@ class QTESequenceRunner:
                 motion_thread = threading.Thread(target=motion_worker, name="stage3-motion", daemon=True)
                 motion_thread.start()
 
-                stage4_ok = self._run_stage4()
+                stage4_ok = self._run_stage4_with_stage3_timeout(cycle_id)
                 self._log(f"[CYCLE {cycle_id}] stage4={stage4_ok}")
 
                 self.cancel_event.set()
