@@ -151,6 +151,27 @@ class QTESequenceRunner:
         while not self.enabled_event.is_set():
             time.sleep(0.1)
 
+    def _hotkey_watch_loop(self, keyboard_module, stop_event: threading.Event) -> None:
+        prev_start = False
+        prev_stop = False
+        while not stop_event.is_set():
+            try:
+                start_pressed = keyboard_module.is_pressed("f9")
+                stop_pressed = keyboard_module.is_pressed("f10")
+            except Exception as exc:
+                self._log(f"[HOTKEY] watcher error: {exc}")
+                time.sleep(0.2)
+                continue
+
+            if start_pressed and not prev_start:
+                self._on_hotkey_start()
+            if stop_pressed and not prev_stop:
+                self._on_hotkey_stop()
+
+            prev_start = start_pressed
+            prev_stop = stop_pressed
+            time.sleep(0.05)
+
     def _handle_stage_false(self, stage_name: str) -> None:
         if not self.enabled_event.is_set():
             self._log(f"[{stage_name}] stopped by F10")
@@ -211,8 +232,14 @@ class QTESequenceRunner:
             self._log(f"[FATAL] keyboard module is required: {exc}")
             return
 
-        keyboard.add_hotkey("f9", self._on_hotkey_start, suppress=False)
-        keyboard.add_hotkey("f10", self._on_hotkey_stop, suppress=False)
+        hotkey_stop_event = threading.Event()
+        hotkey_thread = threading.Thread(
+            target=self._hotkey_watch_loop,
+            args=(keyboard, hotkey_stop_event),
+            name="hotkey-watch",
+            daemon=True,
+        )
+        hotkey_thread.start()
         self._log("Runner started. F9=start/restart, F10=stop.")
 
         motion_thread: Optional[threading.Thread] = None
@@ -281,7 +308,8 @@ class QTESequenceRunner:
             self.cancel_event.set()
             if motion_thread is not None and motion_thread.is_alive():
                 motion_thread.join(timeout=2.0)
-            keyboard.unhook_all_hotkeys()
+            hotkey_stop_event.set()
+            hotkey_thread.join(timeout=1.0)
             self._log("[runner] stopped")
 
 
