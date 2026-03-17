@@ -342,7 +342,6 @@ class QTEBot:
     def run(self, stop_event: Optional[threading.Event] = None) -> bool:
         try:
             print(f"Р‘РѕС‚ Р·Р°РїСѓС‰РµРЅ. РљР»Р°РІРёС€Р°: {self.key_to_press}")
-            print("Ожидание события в стадии.")
 
             self.camera_manager.start()
 
