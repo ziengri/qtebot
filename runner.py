@@ -68,6 +68,7 @@ class QTESequenceRunner:
             min_confirmations=2,
             key="space",
             show_debug=False,
+            warmup_seconds=2.0,
         )
 
     def _build_stage3_bot(self) -> QTEBotMotion:
@@ -136,12 +137,12 @@ class QTESequenceRunner:
         return True
 
     def _on_hotkey_start(self) -> None:
-        self._log("[HOTKEY] F8 START/RESTART")
+        self._log("[HOTKEY] F9 START/RESTART")
         self.enabled_event.set()
         self.cancel_event.set()  # interrupt current stage and start cycle from stage1
 
     def _on_hotkey_stop(self) -> None:
-        self._log("[HOTKEY] F9 STOP")
+        self._log("[HOTKEY] F10 STOP")
         self.enabled_event.clear()
         self.cancel_event.set()
 
@@ -151,7 +152,7 @@ class QTESequenceRunner:
 
     def _handle_stage_false(self, stage_name: str) -> None:
         if not self.enabled_event.is_set():
-            self._log(f"[{stage_name}] stopped by F9")
+            self._log(f"[{stage_name}] stopped by F10")
             return
         if self.cancel_event.is_set():
             self._log(f"[{stage_name}] cancelled/restarted")
@@ -180,9 +181,9 @@ class QTESequenceRunner:
             self._log(f"[FATAL] keyboard module is required: {exc}")
             return
 
-        keyboard.add_hotkey("f8", self._on_hotkey_start, suppress=False)
-        keyboard.add_hotkey("f9", self._on_hotkey_stop, suppress=False)
-        self._log("Runner started. F8=start/restart, F9=stop.")
+        keyboard.add_hotkey("f9", self._on_hotkey_start, suppress=False)
+        keyboard.add_hotkey("f10", self._on_hotkey_stop, suppress=False)
+        self._log("Runner started. F9=start/restart, F10=stop.")
 
         motion_thread: Optional[threading.Thread] = None
         motion_result = {"value": False}

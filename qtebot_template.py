@@ -98,6 +98,7 @@ class TemplateQTEBot:
         debug_window_name: str = "QTE Template Debug",
         log_interval: float = 0.2,
         idle_sleep: float = 0.001,
+        warmup_seconds: float = 0.0,
     ) -> None:
         self.camera = camera
         self.detector = detector
@@ -110,6 +111,7 @@ class TemplateQTEBot:
         self.debug_window_name = debug_window_name
         self.log_interval = log_interval
         self.idle_sleep = idle_sleep
+        self.warmup_seconds = max(0.0, float(warmup_seconds))
 
         self._confirmations = 0
         self._last_press_ts = 0.0
@@ -166,6 +168,7 @@ class TemplateQTEBot:
         try:
             self.camera.start()
             print("Template QTE bot started.")
+            started_ts = time.monotonic()
 
             while True:
                 if stop_event is not None and stop_event.is_set():
@@ -192,6 +195,11 @@ class TemplateQTEBot:
                     # print(f"[match] best={score:.4f} template={name}")
                     self._last_log_ts = now
 
+                if now - started_ts < self.warmup_seconds:
+                    self._confirmations = 0
+                    time.sleep(self.idle_sleep)
+                    continue
+
                 if match is not None and score >= self.threshold:
                     self._confirmations += 1
                 else:
@@ -207,7 +215,10 @@ class TemplateQTEBot:
                             self._press_space()
                             self._last_press_ts = now
                             fired = True
-                            print(f"[ACTION] {self.key.upper()}")
+                            print(
+                                f"[ACTION] {self.key.upper()} "
+                                f"score={score:.4f} elapsed={now - started_ts:.2f}s"
+                            )
                         return True
                     except Exception as exc:
                         print(f"[WARN] key press failed: {exc}")

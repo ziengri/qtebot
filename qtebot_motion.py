@@ -134,7 +134,7 @@ class InputController:
     def _safe_key_down(self, key: str) -> None:
         try:
             interception.key_down(key.lower())
-            print(f"Key down:{key}")
+            # print(f"Key down:{key}")
         except Exception as exc:
             if not self._backend_error_reported:
                 print(f"[InputController][WARN] key_down failed: {exc}")
@@ -143,7 +143,7 @@ class InputController:
     def _safe_key_up(self, key: str) -> None:
         try:
             interception.key_up(key.lower())
-            print(f"Key up:{key}")
+            # print(f"Key up:{key}")
         except Exception as exc:
             if not self._backend_error_reported:
                 print(f"[InputController][WARN] key_up failed: {exc}")
@@ -170,7 +170,7 @@ class InputController:
             self._held_right = False
 
     def set_direction(self, direction: Direction) -> None:
-        print(f"Direction:{direction}")
+        # print(f"Direction:{direction}")
         if direction == "left":
             self._release_right()
             self._hold_left()
