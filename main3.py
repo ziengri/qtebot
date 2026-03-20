@@ -4,14 +4,14 @@ from qtebot_motion import InputController, MotionDetector, QTEBotMotion
 
 def main() -> None:
     camera = CameraManager(
-        region= (1400, 1, 200, 250),
+        region= (1, 1, 200, 200),
         target_fps=120,
         output_color="BGR",
     )
 
     detector = MotionDetector(
-        max_shift=20,
-        move_threshold=0.2,
+        max_shift=8,
+        move_threshold=0.08,
         blur_kernel=5,
         resize_factor=1.0,
     )

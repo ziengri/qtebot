@@ -33,6 +33,6 @@ else:
 bot = QTEClickBot(
     pick=[850, 727],
     drop=[1050, 725],
-    type="drop"
+    type="pick"
 )
 result = bot.run()

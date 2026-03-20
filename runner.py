@@ -75,14 +75,14 @@ class QTESequenceRunner:
 
     def _build_stage3_bot(self) -> QTEBotMotion:
         camera = CameraManager(
-            region=(1400, 1, 200, 250),
+            region=(1500, 1, 400, 300),
             target_fps=120,
             output_color="BGR",
         )
         detector = MotionDetector(
-            max_shift=20,
-            move_threshold=0.2,
-            blur_kernel=5,
+            max_shift=80,#20
+            move_threshold=0.05,#0.2
+            blur_kernel=1,
             resize_factor=1.0,
         )
         controller = InputController(
@@ -123,7 +123,7 @@ class QTESequenceRunner:
         return QTEClickBot(
             pick=(850, 727),
             drop=(1050, 725),
-            type="drop",
+            type="pick",
         )
 
     def _sleep_interruptible(self, duration: float) -> bool:
